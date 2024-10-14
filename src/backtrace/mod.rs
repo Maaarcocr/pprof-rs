@@ -37,7 +37,7 @@ pub trait Frame: Sized + Clone {
 }
 
 pub trait Trace {
-    type Frame;
+    type Frame: Frame;
 
     fn trace<F: FnMut(&Self::Frame) -> bool>(_: *mut libc::c_void, cb: F)
     where
@@ -51,7 +51,7 @@ pub trait Trace {
         target_arch = "riscv64",
         target_arch = "loongarch64"
     ),
-    feature = "frame-pointer"
+    any(feature = "frame-pointer", feature = "framehop-unwinder")
 )))]
 mod backtrace_rs;
 #[cfg(not(all(
@@ -61,7 +61,7 @@ mod backtrace_rs;
         target_arch = "riscv64",
         target_arch = "loongarch64"
     ),
-    feature = "frame-pointer"
+    any(feature = "frame-pointer", feature = "framehop-unwinder")
 )))]
 pub use backtrace_rs::Trace as TraceImpl;
 
@@ -85,3 +85,40 @@ pub mod frame_pointer;
     feature = "frame-pointer"
 ))]
 pub use frame_pointer::Trace as TraceImpl;
+
+#[cfg(all(
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "riscv64",
+        target_arch = "loongarch64"
+    ),
+    feature = "frame-pointer"
+))]
+pub mod frame_pointer;
+
+#[cfg(all(
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+    ),
+    any(
+        target_os = "linux",
+        target_os = "macos",
+    ),
+    feature = "framehop-unwinder"
+))]
+pub mod framehop_unwinder;
+
+#[cfg(all(
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+    ),
+    any(
+        target_os = "linux",
+        target_os = "macos",
+    ),
+    feature = "framehop-unwinder"
+))]
+pub use framehop_unwinder::Trace as TraceImpl;

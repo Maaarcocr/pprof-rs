@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::io::BufRead;
 use std::os::raw::c_void;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -183,19 +184,66 @@ impl Frames {
     }
 }
 
-impl From<UnresolvedFrames> for Frames {
-    fn from(frames: UnresolvedFrames) -> Self {
+pub struct PerfMap {
+    ranges: Vec<(usize, usize, String)>,
+}
+
+impl PerfMap {
+    pub fn new() -> Option<Self> {
+        let path = PathBuf::from("/tmp/").join(format!("perf-{}.map", std::process::id()));
+        let file = std::fs::File::open(&path).ok()?;
+        let reader = std::io::BufReader::new(file);
+        let mut ranges = Vec::new();
+        for line in reader.lines() {
+            let line = line.ok()?;
+            // The format of perf map is:
+            // <start addr> <len addr> <name>
+            // where <start addr> and <len addr> are hexadecimal numbers.
+            // where <name> may contain spaces.
+            let mut parts = line.split_whitespace();
+            let start = usize::from_str_radix(parts.next()?, 16).ok()?;
+            let len = usize::from_str_radix(parts.next()?, 16).ok()?;
+            let name = parts.collect::<Vec<_>>().join(" ");
+            ranges.push((start, start + len, name));
+        }
+        Some(Self { ranges })
+    }
+
+    pub fn find(&self, addr: usize) -> Option<&str> {
+        for (start, end, name) in &self.ranges {
+            if *start <= addr && addr < *end {
+                return Some(name);
+            }
+        }
+        None
+    }
+}
+
+impl UnresolvedFrames {
+    pub fn into_frames_with_perfmap(&self, perfmap: &Option<PerfMap>) -> Frames {
         let mut fs = Vec::new();
 
-        let mut frame_iter = frames.frames.iter();
+        let mut frame_iter = self.frames.iter();
 
         while let Some(frame) = frame_iter.next() {
             let mut symbols: Vec<Symbol> = Vec::new();
 
-            frame.resolve_symbol(|symbol| {
-                let symbol = Symbol::from(symbol);
-                symbols.push(symbol);
-            });
+            if let Some(found) = perfmap
+                .as_ref()
+                .and_then(|perfmap| perfmap.find(Frame::ip(frame)))
+            {
+                symbols.push(Symbol {
+                    name: Some(found.as_bytes().to_vec()),
+                    addr: Some(frame.ip() as *mut c_void),
+                    lineno: None,
+                    filename: None,
+                });
+            } else {
+                frame.resolve_symbol(|symbol| {
+                    let symbol = Symbol::from(symbol);
+                    symbols.push(symbol);
+                });
+            }
 
             if symbols.iter().any(|symbol| {
                 // macOS prepends an underscore even with `#[no_mangle]`
@@ -214,12 +262,12 @@ impl From<UnresolvedFrames> for Frames {
             }
         }
 
-        Self {
+        Frames {
             frames: fs,
-            thread_name: String::from_utf8_lossy(&frames.thread_name[0..frames.thread_name_length])
+            thread_name: String::from_utf8_lossy(&self.thread_name[0..self.thread_name_length])
                 .into_owned(),
-            thread_id: frames.thread_id,
-            sample_timestamp: frames.sample_timestamp,
+            thread_id: self.thread_id,
+            sample_timestamp: self.sample_timestamp,
         }
     }
 }
