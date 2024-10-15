@@ -25,7 +25,10 @@ fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64
         }
     };
 
-    Some((UnwindRegsNative::new(thread_state.__lr, thread_state.__sp, thread_state.__fp), thread_state.__pc))
+    Some((
+        UnwindRegsNative::new(thread_state.__lr, thread_state.__sp, thread_state.__fp),
+        thread_state.__pc,
+    ))
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
@@ -44,7 +47,10 @@ fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64
         }
     };
 
-    Some((UnwindRegsNative::new(thread_state.__rip, thread_state.__rsp, thread_state.__rbp), thread_state.__rip))
+    Some((
+        UnwindRegsNative::new(thread_state.__rip, thread_state.__rsp, thread_state.__rbp),
+        thread_state.__rip,
+    ))
 }
 
 #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
@@ -55,7 +61,10 @@ fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64
     }
 
     let regs = unsafe { &(*ucontext).uc_mcontext.regs };
-    Some((UnwindRegsNative::new(regs[30], regs[31], regs[29]), regs[30]))
+    Some((
+        UnwindRegsNative::new(regs[30], regs[31], regs[29]),
+        regs[30],
+    ))
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
@@ -66,7 +75,14 @@ fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64
     }
     let regs = unsafe { &(*ucontext).uc_mcontext.gregs };
 
-    Some((UnwindRegsNative::new(regs[libc::REG_RIP as usize], regs[libc::REG_RSP as usize], regs[libc::REG_RBP as usize]), regs[libc::REG_RIP as usize]))
+    Some((
+        UnwindRegsNative::new(
+            regs[libc::REG_RIP as usize] as u64,
+            regs[libc::REG_RSP as usize] as u64,
+            regs[libc::REG_RBP as usize] as u64,
+        ),
+        regs[libc::REG_RIP as usize] as u64,
+    ))
 }
 
 struct FramehopUnwinder {

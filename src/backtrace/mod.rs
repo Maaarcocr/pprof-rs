@@ -98,27 +98,15 @@ pub use frame_pointer::Trace as TraceImpl;
 pub mod frame_pointer;
 
 #[cfg(all(
-    any(
-        target_arch = "x86_64",
-        target_arch = "aarch64",
-    ),
-    any(
-        target_os = "linux",
-        target_os = "macos",
-    ),
+    any(target_arch = "x86_64", target_arch = "aarch64",),
+    any(target_os = "linux", target_os = "macos",),
     feature = "framehop-unwinder"
 ))]
 pub mod framehop_unwinder;
 
 #[cfg(all(
-    any(
-        target_arch = "x86_64",
-        target_arch = "aarch64",
-    ),
-    any(
-        target_os = "linux",
-        target_os = "macos",
-    ),
+    any(target_arch = "x86_64", target_arch = "aarch64",),
+    any(target_os = "linux", target_os = "macos",),
     feature = "framehop-unwinder"
 ))]
 pub use framehop_unwinder::Trace as TraceImpl;
