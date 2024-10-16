@@ -295,18 +295,12 @@ mod protobuf {
                         locs.push(function_id);
                     }
                 }
-                let thread_name = protos::Label {
-                    key: *strings.get(THREAD).unwrap() as i64,
-                    str: *strings.get(&key.thread_name_or_id().as_str()).unwrap() as i64,
-                    ..protos::Label::default()
-                };
                 let sample = protos::Sample {
                     location_id: locs,
                     value: vec![
                         *count as i64,
                         *count as i64 * 1_000_000_000 / self.timing.frequency as i64,
                     ],
-                    label: vec![thread_name].into(),
                     ..Default::default()
                 };
                 samples.push(sample);
