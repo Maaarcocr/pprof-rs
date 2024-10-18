@@ -2,15 +2,16 @@
 
 use libc::c_void;
 use std::path::PathBuf;
+use crate::Symbol;
 
-pub trait Symbol: Sized {
+pub trait AsSymbol: Sized {
     fn name(&self) -> Option<Vec<u8>>;
     fn addr(&self) -> Option<*mut c_void>;
     fn lineno(&self) -> Option<u32>;
     fn filename(&self) -> Option<PathBuf>;
 }
 
-impl Symbol for backtrace::Symbol {
+impl AsSymbol for backtrace::Symbol {
     fn name(&self) -> Option<Vec<u8>> {
         self.name().map(|name| name.as_bytes().to_vec())
     }
@@ -29,9 +30,7 @@ impl Symbol for backtrace::Symbol {
 }
 
 pub trait Frame: Sized + Clone {
-    type S: Symbol;
-
-    fn resolve_symbol<F: FnMut(&Self::S)>(&self, cb: F);
+    fn resolve_symbol<F: FnMut(Symbol)>(&self, cb: F);
     fn symbol_address(&self) -> *mut c_void;
     fn ip(&self) -> usize;
 }
@@ -87,17 +86,6 @@ pub mod frame_pointer;
 pub use frame_pointer::Trace as TraceImpl;
 
 #[cfg(all(
-    any(
-        target_arch = "x86_64",
-        target_arch = "aarch64",
-        target_arch = "riscv64",
-        target_arch = "loongarch64"
-    ),
-    feature = "frame-pointer"
-))]
-pub mod frame_pointer;
-
-#[cfg(all(
     any(target_arch = "x86_64", target_arch = "aarch64",),
     any(target_os = "linux", target_os = "macos",),
     feature = "framehop-unwinder"
@@ -110,3 +98,10 @@ pub mod framehop_unwinder;
     feature = "framehop-unwinder"
 ))]
 pub use framehop_unwinder::Trace as TraceImpl;
+
+#[cfg(all(
+    any(target_arch = "x86_64", target_arch = "aarch64",),
+    any(target_os = "linux", target_os = "macos",),
+    feature = "framehop-unwinder"
+))]
+pub use framehop_unwinder::init_perfmap_resolver;

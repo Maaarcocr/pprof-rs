@@ -4,7 +4,7 @@ use std::ptr::null_mut;
 
 use libc::c_void;
 
-use crate::addr_validate::validate;
+use crate::{addr_validate::validate, Symbol};
 
 #[derive(Clone, Debug)]
 pub struct Frame {
@@ -17,14 +17,12 @@ extern "C" {
 }
 
 impl super::Frame for Frame {
-    type S = backtrace::Symbol;
-
     fn ip(&self) -> usize {
         self.ip
     }
 
-    fn resolve_symbol<F: FnMut(&Self::S)>(&self, cb: F) {
-        backtrace::resolve(self.ip as *mut c_void, cb);
+    fn resolve_symbol<F: FnMut(Symbol)>(&self, mut cb: F) {
+        backtrace::resolve(self.ip as *mut c_void, |s| cb(Symbol::from(s)));
     }
 
     fn symbol_address(&self) -> *mut libc::c_void {

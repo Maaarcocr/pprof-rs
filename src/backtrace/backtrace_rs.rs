@@ -1,12 +1,12 @@
-impl super::Frame for backtrace::Frame {
-    type S = backtrace::Symbol;
+use crate::Symbol;
 
+impl super::Frame for backtrace::Frame {
     fn ip(&self) -> usize {
         self.ip() as usize
     }
 
-    fn resolve_symbol<F: FnMut(&Self::S)>(&self, cb: F) {
-        backtrace::resolve_frame(self, cb);
+    fn resolve_symbol<F: FnMut(Symbol)>(&self, mut cb: F) {
+        backtrace::resolve_frame(self, |s| cb(Symbol::from(s)));
     }
 
     fn symbol_address(&self) -> *mut libc::c_void {
@@ -24,5 +24,3 @@ impl super::Trace for Trace {
     }
 }
 
-pub use backtrace::Frame;
-pub use backtrace::Symbol;

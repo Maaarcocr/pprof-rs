@@ -87,3 +87,6 @@ pub mod protos {
 
 #[cfg(feature = "criterion")]
 pub mod criterion;
+
+#[cfg(feature = "framehop-unwinder")]
+pub use backtrace::init_perfmap_resolver;

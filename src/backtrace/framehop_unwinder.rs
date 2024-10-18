@@ -1,17 +1,21 @@
-use std::{arch::asm, num::NonZeroU64};
-
 use framehop::{
-    CacheNative, Error, FrameAddress, MustNotAllocateDuringUnwind, UnwindRegsNative, Unwinder,
+    CacheNative, MustNotAllocateDuringUnwind, UnwindRegsNative, Unwinder,
     UnwinderNative,
 };
 use libc::{c_void, ucontext_t};
 use once_cell::sync::Lazy;
+use perfmap::PERF_MAP_RESOLVER;
+
+use crate::Symbol;
 
 mod object;
+mod perfmap;
+
+pub use perfmap::init_perfmap_resolver;
 
 #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
 fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64)> {
-    let ucontext: *mut libc::ucontext_t = ucontext as *mut libc::ucontext_t;
+    let ucontext: *mut ucontext_t = ucontext as *mut ucontext_t;
     if ucontext.is_null() {
         return None;
     }
@@ -33,7 +37,7 @@ fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64
 
 #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
 fn get_regs_from_context(ucontext: *mut c_void) -> Option<(UnwindRegsNative, u64)> {
-    let ucontext: *mut libc::ucontext_t = ucontext as *mut libc::ucontext_t;
+    let ucontext: *mut ucontext_t = ucontext as *mut ucontext_t;
     if ucontext.is_null() {
         return None;
     }
@@ -142,14 +146,19 @@ extern "C" {
 }
 
 impl super::Frame for Frame {
-    type S = backtrace::Symbol;
-
     fn ip(&self) -> usize {
         self.ip
     }
 
-    fn resolve_symbol<F: FnMut(&Self::S)>(&self, mut cb: F) {
-        backtrace::resolve(self.ip as *mut c_void, cb);
+    fn resolve_symbol<F: FnMut(Symbol)>(&self, mut cb: F) {
+        if let Some(perf_map_resolver) = PERF_MAP_RESOLVER.get() {
+            if let Some(symbol) = perf_map_resolver.resolve(self.ip as _) {
+                cb(Symbol::from(&symbol));
+                return;
+            }
+        }
+
+        backtrace::resolve(self.ip as *mut c_void, |s| cb(Symbol::from(s)));
     }
 
     fn symbol_address(&self) -> *mut c_void {

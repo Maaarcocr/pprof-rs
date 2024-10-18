@@ -5,7 +5,7 @@ use std::fmt::{Debug, Formatter};
 
 use parking_lot::RwLock;
 
-use crate::frames::{Frames, PerfMap, UnresolvedFrames};
+use crate::frames::{Frames, UnresolvedFrames};
 use crate::profiler::Profiler;
 use crate::timer::ReportTiming;
 
@@ -100,7 +100,6 @@ impl<'a> ReportBuilder<'a> {
     /// Build a `Report`.
     pub fn build(&self) -> Result<Report> {
         let mut hash_map = HashMap::new();
-        let perf_map = PerfMap::new();
         match self.profiler.write().as_mut() {
             Err(err) => {
                 log::error!("Error in creating profiler: {}", err);
@@ -110,7 +109,7 @@ impl<'a> ReportBuilder<'a> {
                 profiler.data.try_iter()?.for_each(|entry| {
                     let count = entry.count;
                     if count > 0 {
-                        let mut key = entry.item.into_frames_with_perfmap(&perf_map);
+                        let mut key = (&entry.item).into();
                         if let Some(processor) = &self.frames_post_processor {
                             processor(&mut key);
                         }
