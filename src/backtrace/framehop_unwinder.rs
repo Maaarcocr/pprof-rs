@@ -4,7 +4,7 @@ use framehop::{
 };
 use libc::{c_void, ucontext_t};
 use once_cell::sync::Lazy;
-use perfmap::PERF_MAP_RESOLVER;
+use perfmap::get_resolver;
 
 use crate::Symbol;
 
@@ -151,7 +151,7 @@ impl super::Frame for Frame {
     }
 
     fn resolve_symbol<F: FnMut(Symbol)>(&self, mut cb: F) {
-        if let Some(perf_map_resolver) = PERF_MAP_RESOLVER.get() {
+        if let Ok(Some(perf_map_resolver)) = get_resolver() {
             if let Some(symbol) = perf_map_resolver.resolve(self.ip as _) {
                 cb(Symbol::from(&symbol));
                 return;

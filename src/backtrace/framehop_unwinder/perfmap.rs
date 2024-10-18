@@ -1,19 +1,19 @@
-use std::{io::BufRead, path::{Path, PathBuf}, sync::Arc, time::Duration};
+use std::{io::BufRead, path::PathBuf, sync::{atomic::AtomicBool, Arc}, time::Duration};
 
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use notify_debouncer_mini::{new_debouncer, notify::{self, FsEventWatcher, RecursiveMode}, DebounceEventHandler, DebouncedEvent, DebouncedEventKind, Debouncer};
+use notify_debouncer_mini::{new_debouncer, notify::{FsEventWatcher, RecursiveMode}, DebounceEventHandler, Debouncer};
 
 use crate::{backtrace::AsSymbol, Error};
 
+#[derive(Debug)]
 pub struct PerfMap {
     ranges: Vec<(usize, usize, String)>,
 }
 
 impl PerfMap {
-    pub fn new() -> Option<Self> {
-        let path = PathBuf::from("/tmp/").join(format!("perf-{}.map", std::process::id()));
-        let file = std::fs::File::open(&path).ok()?;
+    pub fn new(path: &PathBuf) -> Option<Self> {
+        let file = std::fs::File::open(path).ok()?;
         let reader = std::io::BufReader::new(file);
         let mut ranges = Vec::new();
         for line in reader.lines() {
@@ -41,6 +41,7 @@ impl PerfMap {
     }
 }
 
+#[derive(Debug)]
 pub struct PerfMapSymbol(String);
 
 impl AsSymbol for PerfMapSymbol {
@@ -61,36 +62,44 @@ impl AsSymbol for PerfMapSymbol {
     }
 }
 
+#[derive(Debug)]
 pub struct PerfMapResolver {
     perf_map: Arc<Mutex<Option<PerfMap>>>
 }
 
-fn create_debouncer<F: DebounceEventHandler>(event_handler: F) -> Result<Debouncer<FsEventWatcher>, Error> {
+fn create_debouncer<F: DebounceEventHandler>(event_handler: F, path: &PathBuf) -> Result<Debouncer<FsEventWatcher>, Error> {
     let mut debouncer = new_debouncer(Duration::from_secs(1), event_handler).map_err(|_| Error::CreatingError)?;
-    let path = PathBuf::from("/tmp/").join(format!("perf-{}.map", std::process::id()));
-    debouncer.watcher().watch(&path, RecursiveMode::NonRecursive).map_err(|_| Error::CreatingError)?;
+    debouncer.watcher().watch(path, RecursiveMode::NonRecursive).map_err(|_| Error::CreatingError)?;
     Ok(debouncer)
+}
+
+fn touch(path: &PathBuf) -> Result<(), Error> {
+    std::fs::OpenOptions::new().create(true).write(true).open(path).map_err(|_| Error::CreatingError)?;
+    Ok(())
 }
 
 impl PerfMapResolver {
     pub fn new() -> Result<Self, Error> {
-        let perf_map = Arc::new(Mutex::new(PerfMap::new()));
+        let path = PathBuf::from("/tmp/").join(format!("perf-{}.map", std::process::id()));
+        touch(&path)?;
+
+        let perf_map = Arc::new(Mutex::new(PerfMap::new(&path)));
         let (tx, rx) = std::sync::mpsc::channel();
 
-        let debouncer = create_debouncer(tx)?;
+        let debouncer = create_debouncer(tx, &path)?;
         let thread_perf_map = Arc::clone(&perf_map);
 
         std::thread::spawn(move || {
-            let _debouncer = debouncer;
             for result in rx {
                 match result {
                     Ok(_events) => {
                         let mut perf_map = thread_perf_map.lock();
-                        *perf_map = PerfMap::new();  
+                        *perf_map = PerfMap::new(&path);  
                     }
-                    Err(error) => log::info!("Error {error:?}"),
+                    _ => {}
                 }
             }
+            drop(debouncer);
         });
         Ok(Self { perf_map })
     }
@@ -104,9 +113,17 @@ impl PerfMapResolver {
     }
 }
 
-pub static PERF_MAP_RESOLVER: OnceCell<PerfMapResolver> = OnceCell::new();
+static PERF_MAP_RESOLVER: OnceCell<PerfMapResolver> = OnceCell::new();
+static SHOULD_USE_PERF_MAP: AtomicBool = AtomicBool::new(false);
 
-pub fn init_perfmap_resolver() -> Result<(), Error>  {
-    let perf_map_resolver = PerfMapResolver::new()?;
-    PERF_MAP_RESOLVER.set(perf_map_resolver).map_err(|_| Error::CreatingError)
+pub fn get_resolver() -> Result<Option<&'static PerfMapResolver>, Error> {
+    if SHOULD_USE_PERF_MAP.load(std::sync::atomic::Ordering::Relaxed) {
+        Ok(Some(PERF_MAP_RESOLVER.get_or_try_init(|| PerfMapResolver::new())?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn init_perfmap_resolver() {
+    SHOULD_USE_PERF_MAP.store(true, std::sync::atomic::Ordering::Relaxed);
 }
