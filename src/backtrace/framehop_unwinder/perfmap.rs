@@ -1,8 +1,16 @@
-use std::{io::BufRead, path::PathBuf, sync::{atomic::AtomicBool, Arc}, time::Duration};
+use std::{
+    io::BufRead,
+    path::PathBuf,
+    sync::{atomic::AtomicBool, Arc, RwLock},
+    time::Duration,
+};
 
+use notify_debouncer_mini::{
+    new_debouncer,
+    notify::{RecursiveMode, Watcher},
+    DebounceEventHandler, Debouncer,
+};
 use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
-use notify_debouncer_mini::{new_debouncer, notify::{FsEventWatcher, RecursiveMode}, DebounceEventHandler, Debouncer};
 
 use crate::{backtrace::AsSymbol, Error};
 
@@ -64,17 +72,28 @@ impl AsSymbol for PerfMapSymbol {
 
 #[derive(Debug)]
 pub struct PerfMapResolver {
-    perf_map: Arc<Mutex<Option<PerfMap>>>
+    perf_map: Arc<RwLock<Option<PerfMap>>>,
 }
 
-fn create_debouncer<F: DebounceEventHandler>(event_handler: F, path: &PathBuf) -> Result<Debouncer<FsEventWatcher>, Error> {
-    let mut debouncer = new_debouncer(Duration::from_secs(1), event_handler).map_err(|_| Error::CreatingError)?;
-    debouncer.watcher().watch(path, RecursiveMode::NonRecursive).map_err(|_| Error::CreatingError)?;
+fn create_debouncer<F: DebounceEventHandler>(
+    event_handler: F,
+    path: &PathBuf,
+) -> Result<Debouncer<impl Watcher>, Error> {
+    let mut debouncer =
+        new_debouncer(Duration::from_secs(1), event_handler).map_err(|_| Error::CreatingError)?;
+    debouncer
+        .watcher()
+        .watch(path, RecursiveMode::NonRecursive)
+        .map_err(|_| Error::CreatingError)?;
     Ok(debouncer)
 }
 
 fn touch(path: &PathBuf) -> Result<(), Error> {
-    std::fs::OpenOptions::new().create(true).write(true).open(path).map_err(|_| Error::CreatingError)?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(path)
+        .map_err(|_| Error::CreatingError)?;
     Ok(())
 }
 
@@ -83,7 +102,7 @@ impl PerfMapResolver {
         let path = PathBuf::from("/tmp/").join(format!("perf-{}.map", std::process::id()));
         touch(&path)?;
 
-        let perf_map = Arc::new(Mutex::new(PerfMap::new(&path)));
+        let perf_map = Arc::new(RwLock::new(PerfMap::new(&path)));
         let (tx, rx) = std::sync::mpsc::channel();
 
         let debouncer = create_debouncer(tx, &path)?;
@@ -93,8 +112,9 @@ impl PerfMapResolver {
             for result in rx {
                 match result {
                     Ok(_events) => {
-                        let mut perf_map = thread_perf_map.lock();
-                        *perf_map = PerfMap::new(&path);  
+                        if let Ok(mut perf_map) = thread_perf_map.write() {
+                            *perf_map = PerfMap::new(&path);
+                        }
                     }
                     _ => {}
                 }
@@ -105,7 +125,7 @@ impl PerfMapResolver {
     }
 
     pub fn resolve(&self, addr: usize) -> Option<PerfMapSymbol> {
-        if let Some(perf_map) = self.perf_map.lock().as_ref() {
+        if let Ok(Some(perf_map)) = self.perf_map.read().as_deref() {
             perf_map.find(addr).map(|s| PerfMapSymbol(s.to_string()))
         } else {
             None
@@ -118,7 +138,9 @@ static SHOULD_USE_PERF_MAP: AtomicBool = AtomicBool::new(false);
 
 pub fn get_resolver() -> Result<Option<&'static PerfMapResolver>, Error> {
     if SHOULD_USE_PERF_MAP.load(std::sync::atomic::Ordering::Relaxed) {
-        Ok(Some(PERF_MAP_RESOLVER.get_or_try_init(|| PerfMapResolver::new())?))
+        Ok(Some(
+            PERF_MAP_RESOLVER.get_or_try_init(|| PerfMapResolver::new())?,
+        ))
     } else {
         Ok(None)
     }

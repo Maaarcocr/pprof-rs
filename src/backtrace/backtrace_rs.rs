@@ -23,4 +23,3 @@ impl super::Trace for Trace {
         unsafe { backtrace::trace_unsynchronized(cb) }
     }
 }
-

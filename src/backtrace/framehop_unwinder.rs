@@ -1,6 +1,5 @@
 use framehop::{
-    CacheNative, MustNotAllocateDuringUnwind, UnwindRegsNative, Unwinder,
-    UnwinderNative,
+    CacheNative, MustNotAllocateDuringUnwind, UnwindRegsNative, Unwinder, UnwinderNative,
 };
 use libc::{c_void, ucontext_t};
 use once_cell::sync::Lazy;

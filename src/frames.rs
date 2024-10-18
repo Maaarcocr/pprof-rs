@@ -192,11 +192,9 @@ impl From<&UnresolvedFrames> for Frames {
         while let Some(frame) = frame_iter.next() {
             let mut symbols: Vec<Symbol> = Vec::new();
 
-            
-                frame.resolve_symbol(|symbol| {
-                    symbols.push(symbol);
-                });
-
+            frame.resolve_symbol(|symbol| {
+                symbols.push(symbol);
+            });
 
             if symbols.iter().any(|symbol| {
                 // macOS prepends an underscore even with `#[no_mangle]`
@@ -217,8 +215,10 @@ impl From<&UnresolvedFrames> for Frames {
 
         Frames {
             frames: fs,
-            thread_name: String::from_utf8_lossy(&unresolved.thread_name[0..unresolved.thread_name_length])
-                .into_owned(),
+            thread_name: String::from_utf8_lossy(
+                &unresolved.thread_name[0..unresolved.thread_name_length],
+            )
+            .into_owned(),
             thread_id: unresolved.thread_id,
             sample_timestamp: unresolved.sample_timestamp,
         }

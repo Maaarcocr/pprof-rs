@@ -1,8 +1,8 @@
 // Copyright 2022 TiKV Project Authors. Licensed under Apache-2.0.
 
+use crate::Symbol;
 use libc::c_void;
 use std::path::PathBuf;
-use crate::Symbol;
 
 pub trait AsSymbol: Sized {
     fn name(&self) -> Option<Vec<u8>>;
